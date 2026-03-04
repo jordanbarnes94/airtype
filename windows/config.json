@@ -1,0 +1,5 @@
+{
+    "port": 8765,
+    "keypress_interval": 0.01,
+    "mode": "ascii"
+}

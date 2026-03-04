@@ -1,0 +1,48 @@
+# Local / machine-specific
+**/local.properties
+.env
+
+# Editor config
+.vscode/
+
+# JetBrains / Android Studio
+.idea/
+*.iml
+**/.idea/
+
+# Gradle / Android outputs + caches
+.gradle/
+**/.gradle/
+**/build/
+**/.kotlin/
+
+# Python caches
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Python venvs
+.venv/
+venv/
+ENV/
+env/
+
+# PyInstaller outputs (keep the .spec file!)
+windows/build/
+windows/dist/
+
+# Android signing keys
+*.jks
+*.keystore
+
+# Android release APKs/bundles
+android/app/release/
+
+# OS files
+Thumbs.db
+.DS_Store
+
+# Logs / temp
+*.log
+*.tmp
+*.temp
