@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">AirType</string>
+
+    <!-- Connection -->
+    <string name="server_connection">Server Connection</string>
+    <string name="ip_address">IP Address</string>
+    <string name="port">Port</string>
+    <string name="ip_hint">192.168.1.100</string>
+    <string name="port_hint">8765</string>
+    <string name="connect">Connect</string>
+    <string name="disconnect">Disconnect</string>
+
+    <!-- Status -->
+    <string name="connected">Connected</string>
+    <string name="disconnected">Disconnected</string>
+    <string name="connecting">Connecting…</string>
+    <string name="reconnecting">Reconnecting… (%1$d)</string>
+
+    <!-- Text input -->
+    <string name="type_here">Type Here</string>
+    <string name="text_input_hint">Start typing to send to your PC…</string>
+    <string name="clear">Clear</string>
+</resources>
