@@ -6,8 +6,8 @@
     <string name="server_connection">Server Connection</string>
     <string name="ip_address">IP Address</string>
     <string name="port">Port</string>
-    <string name="ip_hint">192.168.1.100</string>
-    <string name="port_hint">8765</string>
+    <string name="ip_hint"></string>
+    <string name="port_hint"></string>
     <string name="connect">Connect</string>
     <string name="disconnect">Disconnect</string>
 
@@ -20,5 +20,6 @@
     <!-- Text input -->
     <string name="type_here">Type Here</string>
     <string name="text_input_hint">Start typing to send to your PC…</string>
+    <string name="text_input_hint_disconnected">Enter server details below and tap Connect to start typing…</string>
     <string name="clear">Clear</string>
 </resources>

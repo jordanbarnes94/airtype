@@ -36,7 +36,7 @@ The CLI version supports flags:
 ### Android
 
 **Option A: Download the APK**
-- Download `AirType-release.apk` from [Releases](../../releases)
+- Download `AirType.apk` from [Releases](../../releases)
 - Enable "Install from unknown sources" and install it
 
 **Option B: Build from source**
@@ -52,28 +52,41 @@ Then:
 
 ### Windows Executable
 
+From the repo root:
+```bash
+build_windows.bat
+```
+
+Or invoke PyInstaller directly:
 ```bash
 cd windows
 pip install -r requirements.txt
 python -m PyInstaller build.spec
 ```
 
-Output: `windows/dist/AirType.exe`
+Output: `windows/dist/AirType-<version>.exe`
 
 ### Android App
 
 Requires Android Studio or the Android SDK with Java.
 
+From the repo root, use the build script:
+```bash
+build_android.bat debug      # or: release, bundle
+install_apk.bat              # install the debug or release APK via adb
+```
+
+Or invoke Gradle directly:
 ```bash
 cd android
-./gradlew assembleDebug
+gradlew.bat assembleDebug    # ./gradlew on macOS/Linux
 ```
 
 Output: `android/app/build/outputs/apk/debug/AirType-debug.apk`
 
-Install via:
+Install manually with:
 ```bash
-adb install app/build/outputs/apk/debug/AirType-debug.apk
+adb install android/app/build/outputs/apk/debug/AirType-debug.apk
 ```
 
 ## Requirements
@@ -93,35 +106,56 @@ adb install app/build/outputs/apk/debug/AirType-debug.apk
 - Click on the window/app where you want text to appear before typing on your phone
 - The Windows app types wherever your cursor is focused
 
+**Windows SmartScreen warning ("Publisher: Unknown")?**
+- Expected. The EXE isn't code-signed — I'm not paying for a certificate for a free hobby tool.
+- Click **More info → Run anyway**. Or build it yourself from source.
+
 ## Releasing
 
-1. Bump `versionCode` in `android/app/build.gradle.kts` — this must be higher than any build ever uploaded to Google Play, even unpublished ones. `versionName` is the user-visible string and can stay the same (e.g. `"1.0.0"`) across re-uploads.
+### Versioning
 
-2. Build Windows EXE:
-```bash
-cd windows
-python -m PyInstaller build.spec
-# Output: windows/dist/AirType.exe
-```
+In `android/app/build.gradle.kts`:
+- **`versionName`** — user-visible version string (e.g. `"1.1.0"`). Also used in the APK filename (`AirType-1.1.0.apk`). Bump for new releases.
+- **`versionCode`** — integer that must increase with every Google Play upload, even unpublished ones. Bump this every time you upload an AAB.
 
-3. Build Android APK + AAB:
-```bash
-cd android
-./gradlew.bat assembleRelease bundleRelease
-# APK: android/app/build/outputs/apk/release/AirType-release.apk
-# AAB: android/app/build/outputs/bundle/release/AirType-release.aab (for Google Play)
-```
+### Build scripts
 
-4. Commit and push:
-```bash
-git add -A
-git commit -m "Release vX.X.X"
-git push origin main
-```
+| Script | What it does |
+|---|---|
+| `build.bat` | Interactive menu: Android, Windows, or both |
+| `build_android.bat [debug\|release\|bundle]` | Build Android APK or AAB (interactive menu if no arg) |
+| `build_windows.bat` | Build the Windows EXE |
+| `install_apk.bat` | Install the debug or release APK to a connected device via adb |
+| `publish.bat` | Build everything (release APK + AAB + EXE), copy APK + EXE to the website deploy dir |
+| `release.bat` | Tag, push, and create the GitHub release with all artifacts |
 
-5. Create GitHub release (attach EXE and APK for sideloading; submit AAB to Google Play separately):
-```bash
-gh release create vX.X.X --title "AirType vX.X.X" \
-  windows/dist/AirType.exe \
-  android/app/build/outputs/apk/release/AirType-release.apk
-```
+All scripts read `versionName` from `android/app/build.gradle.kts` automatically — no arguments needed.
+
+### Deploy flow
+
+1. Bump `versionName` (and `versionCode` if uploading to Play Store) in `android/app/build.gradle.kts`
+2. Update release notes:
+   - `release_notes.txt` — GitHub release body (clean markdown)
+   - `play_store_notes.txt` — Play Console "What's New" (versioned changelog, wrapped in `<en-GB>` for Play's locale format)
+3. Run `publish.bat` — builds everything, copies to website
+4. Run `release.bat` — tags, pushes to GitHub, creates release using `release_notes.txt`
+5. Upload AAB to Google Play Console manually; paste `play_store_notes.txt` into the release notes field
+6. Build and push website:
+   ```
+   cd C:\gitsync\programming\website
+   npm run publish
+   cd C:\gitsync\programming\jordanbarnes94.github.io
+   git add -A && git commit -m "AirType vX.X.X" && git push
+   ```
+
+### Configuration
+
+Signing and deploy settings live in `.env` at the repo root (copy from `.env.example`):
+- `AIRTYPE_KEYSTORE_PATH`, `AIRTYPE_KEYSTORE_PASSWORD`, `AIRTYPE_KEY_ALIAS`, `AIRTYPE_KEY_PASSWORD` — Android release signing (read by `android/app/build.gradle.kts`)
+- `DEPLOY_DIR` — target directory for the website artifact copy (read by `publish.bat`)
+
+## Developer reference
+
+Architecture notes for anyone hacking on the code:
+- [`docs/android-app.md`](docs/android-app.md) — Android source file overview
+- [`docs/windows-server.md`](docs/windows-server.md) — Windows server + GUI overview

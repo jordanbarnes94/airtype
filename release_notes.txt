@@ -1,5 +1,5 @@
-<en-GB>
+**v1.1.0** — grapheme-aware backspace (emoji fix), keyboard-aware layout, UX polish.
+
 Type on your Android phone and have the text appear on your Windows PC in real time — no cables, just Wi-Fi.
 
-Works with glide typing, autocorrect, and voice input. Download the Windows client at github.com/jordanbarnes94/airtype/releases
-</en-GB>
+Works with glide typing, autocorrect, and voice input.

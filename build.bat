@@ -1,32 +1,45 @@
 @echo off
-setlocal
+setlocal enabledelayedexpansion
 
 :: ============================================================
-:: AirType - Build Android APK + Windows EXE
-:: Usage:  build.bat                    (both, Android debug)
-::         build.bat android            (Android debug only)
-::         build.bat android release    (Android release only)
-::         build.bat windows            (Windows only)
+:: AirType - Build
+:: Pass argument to skip menu: android, windows
 :: ============================================================
 
 set "ROOT=%~dp0"
 set "FAILED="
-set "BUILD_ANDROID=1"
-set "BUILD_WINDOWS=1"
-set "ANDROID_VARIANT=debug"
+set "TARGET=%~1"
 
-if /i "%~1"=="android" (
-    set "BUILD_WINDOWS="
-    if /i "%~2"=="release" set "ANDROID_VARIANT=release"
+:: --- Interactive menu if no argument ---
+if "%TARGET%"=="" (
+    echo.
+    echo  AirType - Build
+    echo  ========================
+    echo  1. Android + Windows
+    echo  2. Android only
+    echo  3. Windows only
+    echo.
+    set /p "CHOICE=Select [1-3]: "
+    if "!CHOICE!"=="1" set "TARGET=all"
+    if "!CHOICE!"=="2" set "TARGET=android"
+    if "!CHOICE!"=="3" set "TARGET=windows"
+    if "!TARGET!"=="" (
+        echo Invalid selection.
+        exit /b 1
+    )
+) else (
+    if /i "%TARGET%"=="android" set "TARGET=android"
+    if /i "%TARGET%"=="windows" set "TARGET=windows"
 )
-if /i "%~1"=="windows" set "BUILD_ANDROID="
 
-if defined BUILD_ANDROID (
-    call "%ROOT%build_android.bat" %ANDROID_VARIANT%
+set "SKIP_PAUSE=1"
+
+if /i not "%TARGET%"=="windows" (
+    call "%ROOT%build_android.bat"
     if errorlevel 1 set "FAILED=1"
 )
 
-if defined BUILD_WINDOWS (
+if /i not "%TARGET%"=="android" (
     call "%ROOT%build_windows.bat"
     if errorlevel 1 set "FAILED=1"
 )
@@ -38,15 +51,14 @@ if defined FAILED (
 ) else (
     echo  BUILD SUCCESSFUL
 )
-if defined BUILD_ANDROID (
-    if /i "%ANDROID_VARIANT%"=="release" (
-        echo  APK: %ROOT%android\app\build\outputs\apk\release\app-release-unsigned.apk
-    ) else (
-        echo  APK: %ROOT%android\app\build\outputs\apk\debug\app-debug.apk
-    )
+if /i not "%TARGET%"=="windows" (
+    echo  See build_android output above for artifact path
 )
-if defined BUILD_WINDOWS echo  EXE: %ROOT%windows\dist\AirType.exe
+if /i not "%TARGET%"=="android" (
+    echo  EXE: %ROOT%windows\dist\AirType.exe
+)
 echo ============================================================
 
+pause
 endlocal
 exit /b 0

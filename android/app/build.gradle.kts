@@ -23,8 +23,8 @@ android {
         applicationId = "click.jordanbarnes.airtype"
         minSdk = 26
         targetSdk = 36
-        versionCode = 3
-        versionName = "1.0.0"
+        versionCode = 4
+        versionName = "1.1.0"
     }
 
     signingConfigs {
@@ -64,7 +64,9 @@ android {
         val variant = this
         outputs.all {
             (this as com.android.build.gradle.internal.api.BaseVariantOutputImpl)
-            outputFileName = "AirType-${variant.buildType.name}.apk"
+            outputFileName = if (variant.buildType.name == "release")
+                "AirType-${variant.versionName}.apk"
+            else "AirType-${variant.buildType.name}.apk"
         }
     }
 }
