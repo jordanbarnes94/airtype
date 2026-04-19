@@ -3,18 +3,35 @@ setlocal enabledelayedexpansion
 
 :: ============================================================
 :: AirType - Build Android APK / AAB
-:: Usage:  build_android.bat             (debug APK, default)
-::         build_android.bat debug       (debug APK)
-::         build_android.bat release     (release APK - requires signing config)
-::         build_android.bat bundle      (release AAB for Google Play)
+:: Pass argument to skip menu: debug, release, bundle
 :: ============================================================
 
 set "ROOT=%~dp0"
-set "VARIANT=debug"
+set "VARIANT=%~1"
+
+:: --- Interactive menu if no argument ---
+if not "%VARIANT%"=="" goto :start
+
+echo.
+echo  AirType - Android Build
+echo  ========================
+echo  1. Debug APK
+echo  2. Release APK
+echo  3. Release AAB ^(Google Play^)
+echo.
+set /p "CHOICE=Select [1-3]: "
+if "%CHOICE%"=="1" set "VARIANT=debug"
+if "%CHOICE%"=="2" set "VARIANT=release"
+if "%CHOICE%"=="3" set "VARIANT=bundle"
+if "%VARIANT%"=="" (
+    echo Invalid selection.
+    if not defined SKIP_PAUSE pause
+    exit /b 1
+)
+
+:start
 set "BUNDLE=0"
-if /i "%~1"=="release" set "VARIANT=release"
-if /i "%~1"=="debug"   set "VARIANT=debug"
-if /i "%~1"=="bundle"  (set "VARIANT=release" & set "BUNDLE=1")
+if /i "%VARIANT%"=="bundle" (set "VARIANT=release" & set "BUNDLE=1")
 
 :: --- Resolve JAVA_HOME ---
 if not defined JAVA_HOME (
@@ -32,6 +49,22 @@ if not defined ANDROID_HOME (
     if defined ANDROID_HOME set "ANDROID_HOME=!ANDROID_HOME:\\=\!"
 )
 
+:: --- Read versionName from build.gradle.kts ---
+set "VERSION="
+set "GRADLE_FILE=%ROOT%android\app\build.gradle.kts"
+if not exist "%GRADLE_FILE%" (
+    echo [FAIL] build.gradle.kts not found: %GRADLE_FILE%
+        exit /b 1
+)
+:: Split `versionName = "X.Y.Z"` on `=`, take the right side, strip spaces and quotes.
+for /f "usebackq tokens=1,* delims==" %%a in (`findstr /r /c:"versionName *=" "%GRADLE_FILE%"`) do set "VRAW=%%b"
+set "VRAW=!VRAW: =!"
+set "VERSION=!VRAW:"=!"
+if "!VERSION!"=="" (
+    echo [FAIL] Could not read versionName from %GRADLE_FILE%
+        exit /b 1
+)
+
 echo.
 echo ============================================================
 if "%BUNDLE%"=="1" (
@@ -39,25 +72,25 @@ if "%BUNDLE%"=="1" (
 ) else (
     echo  Building Android APK [%VARIANT%]
 )
+echo  Version:      %VERSION%
 echo  JAVA_HOME:    %JAVA_HOME%
 echo  ANDROID_HOME: %ANDROID_HOME%
 echo ============================================================
 echo.
 
+set "GRADLE_CMD=assembleDebug"
+if /i "%VARIANT%"=="release" set "GRADLE_CMD=assembleRelease"
+if "%BUNDLE%"=="1" set "GRADLE_CMD=bundleRelease"
+
 pushd "%ROOT%android"
-if "%BUNDLE%"=="1" (
-    call .\gradlew.bat bundleRelease
-) else if /i "%VARIANT%"=="release" (
-    call .\gradlew.bat assembleRelease
-) else (
-    call .\gradlew.bat assembleDebug
-)
+call .\gradlew.bat %GRADLE_CMD%
 set "GRADLE_ERR=%errorlevel%"
 popd
 
 if %GRADLE_ERR% neq 0 (
     echo.
     echo [FAIL] Android build failed.
+    if not defined SKIP_PAUSE pause
     endlocal
     exit /b 1
 )
@@ -66,11 +99,12 @@ echo.
 if "%BUNDLE%"=="1" (
     echo [OK] AAB: android\app\build\outputs\bundle\release\AirType-release.aab
 ) else if /i "%VARIANT%"=="release" (
-    echo [OK] APK: android\app\build\outputs\apk\release\AirType-release.apk
+    echo [OK] APK: android\app\build\outputs\apk\release\AirType-%VERSION%.apk
 ) else (
     echo [OK] APK: android\app\build\outputs\apk\debug\AirType-debug.apk
 )
 
+if not defined SKIP_PAUSE pause
 endlocal
 exit /b 0
 

@@ -36,6 +36,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var statusDot: View
     private lateinit var textInput: AppendOnlyEditText
     private lateinit var clearButton: ImageButton
+    private lateinit var connectionCard: LinearLayout
 
     private var webSocketClient: WebSocketClient? = null
     private var isConnected = false
@@ -74,6 +75,9 @@ class MainActivity : AppCompatActivity() {
                 right = insets.right,
                 bottom = insets.bottom
             )
+            val imeVisible = windowInsets.isVisible(WindowInsetsCompat.Type.ime())
+            val hideForTyping = imeVisible && textInput.hasFocus()
+            connectionCard.visibility = if (hideForTyping) View.GONE else View.VISIBLE
             WindowInsetsCompat.CONSUMED
         }
 
@@ -85,10 +89,22 @@ class MainActivity : AppCompatActivity() {
         statusDot = findViewById(R.id.statusDot)
         textInput = findViewById(R.id.textInput)
         clearButton = findViewById(R.id.clearButton)
+        connectionCard = findViewById(R.id.connectionCard)
 
         // Load saved values
         ipInput.setText(loadPref(KEY_LAST_IP, DEFAULT_IP))
         portInput.setText(loadPref(KEY_LAST_PORT, DEFAULT_PORT))
+
+        // Re-evaluate connection card visibility when focus moves between inputs
+        val focusListener = View.OnFocusChangeListener { _, _ ->
+            val imeVisible = ViewCompat.getRootWindowInsets(rootView)
+                ?.isVisible(WindowInsetsCompat.Type.ime()) == true
+            connectionCard.visibility =
+                if (imeVisible && textInput.hasFocus()) View.GONE else View.VISIBLE
+        }
+        textInput.onFocusChangeListener = focusListener
+        ipInput.onFocusChangeListener = focusListener
+        portInput.onFocusChangeListener = focusListener
 
         // Set up click listeners
         connectButton.setOnClickListener { toggleConnection() }
@@ -143,6 +159,9 @@ class MainActivity : AppCompatActivity() {
                 statusText.setTextColor(getColor(R.color.connected))
                 statusDot.setBackgroundResource(R.drawable.status_dot_connected)
                 connectButton.text = getString(R.string.disconnect)
+                textInput.hint = getString(R.string.text_input_hint)
+                textInput.isFocusable = true
+                textInput.isFocusableInTouchMode = true
                 textInput.isEnabled = true
                 textInput.requestFocus()
             }
@@ -153,6 +172,11 @@ class MainActivity : AppCompatActivity() {
                 statusText.setTextColor(getColor(R.color.text_secondary))
                 statusDot.setBackgroundResource(R.drawable.status_dot_disconnected)
                 connectButton.text = getString(R.string.connect)
+                textInput.hint = getString(R.string.text_input_hint_disconnected)
+                textInput.isEnabled = false
+                textInput.isFocusable = false
+                textInput.isFocusableInTouchMode = false
+                textInput.clearFocus()
             }
             null -> {
                 // Connecting state
@@ -198,7 +222,10 @@ class MainActivity : AppCompatActivity() {
 
     private fun setupTextWatcher() {
         textInput.addTextChangedListener(object : TextWatcher {
-            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {
+                if (ignoreTextChanges || !isConnected) return
+                textSyncProcessor.beforeTextChanged(s, start, count, after)
+            }
 
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
                 if (ignoreTextChanges || !isConnected) return

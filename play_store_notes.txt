@@ -1,0 +1,7 @@
+<en-GB>
+v1.0.0:
+
+Type on your Android phone and have the text appear on your Windows PC in real time — no cables, just Wi-Fi.
+
+Works with glide typing, autocorrect, and voice input. Download the Windows client at https://jordanbarnes.uk/projects/airtype/download/
+</en-GB>

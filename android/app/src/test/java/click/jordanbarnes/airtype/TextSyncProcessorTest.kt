@@ -45,7 +45,34 @@ class TextSyncProcessorTest {
 
     @Test
     fun `backspace sends backspace`() {
-        // User deletes 1 character
+        // User deletes 1 character from "hello"
+        processor.beforeTextChanged("hello", 4, 1, 0)
+        processor.onTextChanged("hell", 4, 1, 0)
+        assertEquals(listOf("BACKSPACE:1"), messages)
+    }
+
+    @Test
+    fun `backspace emoji sends single backspace`() {
+        // User deletes 😀 (2 UTF-16 code units, 1 grapheme cluster)
+        val textBefore = "hello😀"
+        processor.beforeTextChanged(textBefore, 5, 2, 0)
+        processor.onTextChanged("hello", 5, 2, 0)
+        assertEquals(listOf("BACKSPACE:1"), messages)
+    }
+
+    @Test
+    fun `backspace flag emoji sends single backspace`() {
+        // User deletes 🇦🇺 (4 UTF-16 code units, 1 grapheme cluster)
+        val flag = "\uD83C\uDDE6\uD83C\uDDFA" // 🇦🇺
+        val textBefore = "hi$flag"
+        processor.beforeTextChanged(textBefore, 2, 4, 0)
+        processor.onTextChanged("hi", 2, 4, 0)
+        assertEquals(listOf("BACKSPACE:1"), messages)
+    }
+
+    @Test
+    fun `backspace without beforeTextChanged falls back to raw count`() {
+        // If beforeTextChanged wasn't called, fall back to before count
         processor.onTextChanged("hell", 4, 1, 0)
         assertEquals(listOf("BACKSPACE:1"), messages)
     }
@@ -53,6 +80,7 @@ class TextSyncProcessorTest {
     @Test
     fun `autocorrect sends backspaces then text`() {
         // "teh" autocorrects to "the" - 3 chars replaced with 3 chars
+        processor.beforeTextChanged("teh", 0, 3, 3)
         processor.onTextChanged("the", 0, 3, 3)
         assertEquals(listOf("BACKSPACE:3", "TEXT:the"), messages)
     }
