@@ -28,6 +28,11 @@ def main():
         help="WebSocket port (default: 8765)"
     )
     parser.add_argument(
+        "--token",
+        default="",
+        help="Require clients to send this pairing token before typing (default: no auth)"
+    )
+    parser.add_argument(
         "--debug",
         action="store_true",
         help="Enable debug logging (shows all messages)"
@@ -39,6 +44,9 @@ def main():
     )
 
     args = parser.parse_args()
+
+    if not 1 <= args.port <= 65535:
+        parser.error(f"port must be between 1 and 65535 (got {args.port})")
 
     # Configure logging based on flags
     if args.silent:
@@ -64,6 +72,10 @@ def main():
         print("  Warning: Unicode mode will overwrite your clipboard")
     print()
     print(f"  Enter this on your phone: {local_ip}:{args.port}")
+    if args.token:
+        print(f"  Pairing token: {args.token}")
+    else:
+        print("  Warning: no --token set; any device on this network can type")
     print()
     print("  Waiting for connection...")
     print("=" * 50)
@@ -71,6 +83,7 @@ def main():
     server = AirTypeServer(
         port=args.port,
         mode=args.mode,
+        token=args.token,
         on_connect=lambda ip: print(f"\n[+] Client connected: {ip}"),
         on_disconnect=lambda ip: print(f"[-] Client disconnected: {ip}"),
     )

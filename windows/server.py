@@ -5,6 +5,7 @@ Shared between CLI (main.py) and GUI (gui.py)
 """
 
 import asyncio
+import hmac
 import json
 import logging
 import socket
@@ -18,6 +19,14 @@ import pyautogui
 pyautogui.PAUSE = 0
 
 logger = logging.getLogger("airtype")
+
+# Sanity limits on incoming messages. A well-behaved client never gets near
+# these; they exist so a buggy or hostile client can't wedge the server.
+MAX_TEXT_LENGTH = 5000
+MAX_BACKSPACE_COUNT = 500
+MAX_QUEUE_SIZE = 256
+AUTH_TIMEOUT_SECONDS = 10
+CLOSE_CODE_AUTH_FAILED = 4401
 
 
 def get_local_ip() -> str:
@@ -58,9 +67,43 @@ def handle_enter():
     pyautogui.press('enter')
 
 
+def sanitize_message(msg) -> Optional[dict]:
+    """
+    Validate and normalize a decoded client message.
+    Returns a safe dict, or None if the message is malformed.
+    """
+    if not isinstance(msg, dict):
+        return None
+
+    msg_type = msg.get("type")
+    if msg_type == "text":
+        content = msg.get("content", "")
+        if not isinstance(content, str):
+            return None
+        return {"type": "text", "content": content[:MAX_TEXT_LENGTH]}
+    elif msg_type == "backspace":
+        count = msg.get("count", 1)
+        if isinstance(count, bool) or not isinstance(count, int):
+            return None
+        return {"type": "backspace", "count": max(1, min(count, MAX_BACKSPACE_COUNT))}
+    elif msg_type in ("enter", "auth"):
+        return msg
+    return None
+
+
+def check_auth(msg, token: str) -> bool:
+    """Check whether an auth message carries the expected token."""
+    if not isinstance(msg, dict) or msg.get("type") != "auth":
+        return False
+    supplied = msg.get("token")
+    if not isinstance(supplied, str):
+        return False
+    return hmac.compare_digest(supplied, token)
+
+
 def process_message(msg: dict, mode: str, interval: float) -> tuple[str, str]:
     """
-    Process a single message (runs in thread pool).
+    Process a single sanitized message (runs in thread pool).
     Returns (message_type, description) for logging.
     """
     msg_type = msg.get("type", "unknown")
@@ -89,6 +132,7 @@ class AirTypeServer:
         port: int = 8765,
         mode: str = "ascii",
         interval: float = 0.01,
+        token: str = "",
         on_connect: Optional[Callable[[str], None]] = None,
         on_disconnect: Optional[Callable[[str], None]] = None,
         on_message: Optional[Callable[[str], None]] = None,
@@ -97,6 +141,7 @@ class AirTypeServer:
         self.port = port
         self.mode = mode
         self.interval = interval
+        self.token = token
         self.on_connect = on_connect
         self.on_disconnect = on_disconnect
         self.on_message = on_message
@@ -111,7 +156,7 @@ class AirTypeServer:
     async def start(self):
         """Start the WebSocket server."""
         self.is_running = True
-        self.message_queue = asyncio.Queue()
+        self.message_queue = asyncio.Queue(maxsize=MAX_QUEUE_SIZE)
         self._stop_event = asyncio.Event()
 
         # Start queue processor
@@ -133,16 +178,52 @@ class AirTypeServer:
             processor_task.cancel()
             if self.server:
                 self.server.close()
-                await self.server.wait_closed()
+                try:
+                    await asyncio.wait_for(self.server.wait_closed(), timeout=5)
+                except asyncio.TimeoutError:
+                    logger.warning("Timed out waiting for server to close")
+            self._executor.shutdown(wait=False)
 
     def stop(self):
         """Signal the server to stop."""
         if self._stop_event:
             self._stop_event.set()
 
+    async def _authenticate(self, websocket, client_ip: str) -> bool:
+        """
+        Require a valid auth message as the first frame when a token is set.
+        Returns True if the client may proceed.
+        """
+        if not self.token:
+            return True
+
+        try:
+            first = await asyncio.wait_for(websocket.recv(), timeout=AUTH_TIMEOUT_SECONDS)
+            msg = json.loads(first)
+        except (asyncio.TimeoutError, json.JSONDecodeError,
+                websockets.exceptions.ConnectionClosed):
+            msg = None
+
+        if msg is not None and check_auth(msg, self.token):
+            await websocket.send(json.dumps({"type": "auth_ok"}))
+            return True
+
+        logger.warning(f"Rejected client {client_ip}: authentication failed")
+        if self.on_error:
+            self.on_error(f"Rejected {client_ip}: authentication failed")
+        await websocket.close(CLOSE_CODE_AUTH_FAILED, "authentication failed")
+        return False
+
     async def _handle_client(self, websocket):
         """Handle incoming WebSocket connections."""
         client_ip = websocket.remote_address[0]
+
+        try:
+            if not await self._authenticate(websocket, client_ip):
+                return
+        except websockets.exceptions.ConnectionClosed:
+            return
+
         logger.info(f"Client connected from {client_ip}")
 
         if self.on_connect:
@@ -151,9 +232,16 @@ class AirTypeServer:
         try:
             async for message in websocket:
                 try:
-                    msg = json.loads(message)
-                    await self.message_queue.put(msg)
+                    msg = sanitize_message(json.loads(message))
+                    if msg is None or msg["type"] == "auth":
+                        logger.warning(f"Ignoring malformed/unexpected message from {client_ip}")
+                        continue
+                    self.message_queue.put_nowait(msg)
                     logger.debug(f"Queued: {msg} (queue size: {self.message_queue.qsize()})")
+                except asyncio.QueueFull:
+                    logger.warning("Message queue full, dropping message")
+                    if self.on_error:
+                        self.on_error("Message queue full, dropping message")
                 except json.JSONDecodeError:
                     logger.error(f"Invalid JSON: {message}")
                     if self.on_error:
@@ -176,7 +264,7 @@ class AirTypeServer:
         while True:
             msg = await self.message_queue.get()
             try:
-                msg_type, description = await loop.run_in_executor(
+                _, description = await loop.run_in_executor(
                     self._executor,
                     process_message,
                     msg,
