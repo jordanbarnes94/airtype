@@ -1,6 +1,7 @@
 # Local / machine-specific
 **/local.properties
 .env
+windows/config.json
 
 # Editor config
 .vscode/

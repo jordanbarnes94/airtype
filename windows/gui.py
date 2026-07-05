@@ -7,6 +7,7 @@ import asyncio
 import json
 import logging
 import os
+import secrets
 import sys
 import threading
 from datetime import datetime
@@ -36,6 +37,20 @@ def load_config() -> dict:
     except Exception:
         return {}
 
+
+def save_config(config: dict):
+    try:
+        with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+            json.dump(config, f, indent=2)
+    except Exception as e:
+        logging.getLogger("airtype").warning(f"Could not save config: {e}")
+
+
+def generate_token() -> str:
+    """Generate a short pairing token, avoiding easily-confused characters."""
+    alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+    return "".join(secrets.choice(alphabet) for _ in range(6))
+
 # Windows display fixes (must run before any window is created):
 # 1. DPI awareness - without this, Windows bitmap-scales the process,
 #    making the taskbar icon (and everything else) blurry.
@@ -45,18 +60,19 @@ try:
     import ctypes
 
     ctypes.windll.shcore.SetProcessDpiAwareness(2)  # PROCESS_PER_MONITOR_DPI_AWARE
-except Exception:
+except Exception as e:
+    logging.getLogger("airtype").debug(f"SetProcessDpiAwareness failed: {e}")
     try:
         ctypes.windll.user32.SetProcessDPIAware()
-    except Exception:
-        pass
+    except Exception as e2:
+        logging.getLogger("airtype").debug(f"SetProcessDPIAware failed: {e2}")
 
 try:
     ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
         "click.jordanbarnes.airtype"
     )
-except Exception:
-    pass
+except Exception as e:
+    logging.getLogger("airtype").debug(f"SetCurrentProcessExplicitAppUserModelID failed: {e}")
 
 logger = logging.getLogger("airtype")
 
@@ -76,11 +92,19 @@ class AirTypeApp(ctk.CTk):
         self.mode = config.get("mode", "ascii")
         self.port = config.get("port", 8765)
         self.interval = config.get("keypress_interval", 0.01)
+        # Pairing token: generated on first run; set "token": "" in config.json
+        # (or clear the Token field) to disable authentication.
+        if "token" in config:
+            self.token = config.get("token") or ""
+        else:
+            self.token = generate_token()
+            config["token"] = self.token
+            save_config(config)
 
         # Window setup
         self.title("AirType")
-        self.geometry("400x560")
-        self.minsize(350, 440)
+        self.geometry("400x620")
+        self.minsize(350, 500)
 
         # Set appearance
         ctk.set_appearance_mode("dark")
@@ -137,8 +161,8 @@ class AirTypeApp(ctk.CTk):
             if hwnd:
                 user32.SendMessageW(hwnd, WM_SETICON, ICON_BIG, hicon)
                 user32.SetClassLongPtrW(hwnd, GCLP_HICON, hicon)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"Taskbar icon override failed: {e}")
 
     def create_widgets(self):
         # Container for main + log panel side by side
@@ -237,6 +261,19 @@ class AirTypeApp(ctk.CTk):
         )
         self.port_display.pack(pady=(0, 5))
 
+        # Pairing token box (full width, below IP/port)
+        token_box = ctk.CTkFrame(conn_frame)
+        token_box.pack(fill="x", padx=10, pady=(0, 12))
+
+        ctk.CTkLabel(token_box, text="Pairing Token", font=ctk.CTkFont(size=11)).pack(pady=(5, 0))
+        self.token_display = ctk.CTkLabel(
+            token_box,
+            text=self.token if self.token else "(authentication disabled)",
+            font=ctk.CTkFont(size=15, weight="bold"),
+            text_color=("#1E90FF", "#00BFFF") if self.token else ("#B8860B", "#FFA500"),
+        )
+        self.token_display.pack(pady=(0, 5))
+
         # Status frame
         status_frame = ctk.CTkFrame(self.main_frame)
         status_frame.pack(fill="x", padx=10, pady=(0, 10))
@@ -288,6 +325,17 @@ class AirTypeApp(ctk.CTk):
         self.port_entry.insert(0, str(self.port))
         self.port_entry.pack(side="right")
 
+        # Token setting
+        token_frame = ctk.CTkFrame(settings_frame, fg_color="transparent")
+        token_frame.pack(fill="x", padx=10, pady=(5, 5))
+
+        token_label = ctk.CTkLabel(token_frame, text="Token:")
+        token_label.pack(side="left")
+
+        self.token_entry = ctk.CTkEntry(token_frame, width=110)
+        self.token_entry.insert(0, self.token)
+        self.token_entry.pack(side="right")
+
         # Restart button for port changes
         self.restart_btn = ctk.CTkButton(
             settings_frame,
@@ -314,11 +362,11 @@ class AirTypeApp(ctk.CTk):
         if self.show_debug_var.get():
             # Show log panel, widen window
             self.log_frame.pack(side="right", fill="both", expand=True, padx=(10, 0))
-            self.geometry("780x560")
+            self.geometry("780x620")
         else:
             # Hide log panel, shrink window
             self.log_frame.pack_forget()
-            self.geometry("400x560")
+            self.geometry("400x620")
 
     def log(self, message: str):
         """Add a message to the log display."""
@@ -335,7 +383,13 @@ class AirTypeApp(ctk.CTk):
         self.mode = new_mode
         if self.server:
             self.server.mode = new_mode
+        self._persist_config()
         self.log(f"Mode changed to: {self.mode.upper()}")
+
+    def _persist_config(self):
+        config = load_config()
+        config.update({"mode": self.mode, "port": self.port, "token": self.token})
+        save_config(config)
 
     def update_status(self, connected: bool, client_ip: Optional[str] = None):
         """Update the connection status display."""
@@ -370,6 +424,7 @@ class AirTypeApp(ctk.CTk):
             port=self.port,
             mode=self.mode,
             interval=self.interval,
+            token=self.token,
             on_connect=self._schedule_connect,
             on_disconnect=self._schedule_disconnect,
             on_message=self._schedule_message,
@@ -383,6 +438,7 @@ class AirTypeApp(ctk.CTk):
                 loop.run_until_complete(self.server.start())
             except Exception as e:
                 logger.error(f"Server error: {e}")
+                self._schedule_error(f"Server failed to start: {e}")
 
         self.server_thread = threading.Thread(target=run_server, daemon=True)
         self.server_thread.start()
@@ -399,11 +455,14 @@ class AirTypeApp(ctk.CTk):
         self.log(f"Client disconnected: {ip}")
 
     def restart_server(self):
-        """Restart the server with new port."""
+        """Restart the server with new port/token settings."""
         try:
             new_port = int(self.port_entry.get())
         except ValueError:
             self.log("Invalid port number")
+            return
+        if not 1024 <= new_port <= 65535:
+            self.log(f"Port must be between 1024 and 65535 (got {new_port})")
             return
 
         # Stop old server
@@ -411,16 +470,29 @@ class AirTypeApp(ctk.CTk):
             self.server.stop()
             self.log("Stopping server...")
 
-        # Update port
+        # Apply new settings
         self.port = new_port
+        self.token = self.token_entry.get().strip()
+        self._persist_config()
         self.ip_display.configure(text=get_local_ip())
         self.port_display.configure(text=str(self.port))
+        self.token_display.configure(
+            text=self.token if self.token else "(authentication disabled)",
+            text_color=("#1E90FF", "#00BFFF") if self.token else ("#B8860B", "#FFA500"),
+        )
 
-        # Give old server time to stop
-        self.after(500, self._start_new_server)
+        # Start the new server once the old one has actually stopped
+        # (waiting a fixed delay risks the port still being bound)
+        self._start_when_stopped(attempts_left=50)
 
-    def _start_new_server(self):
-        """Start a new server after the old one stopped."""
+    def _start_when_stopped(self, attempts_left: int):
+        """Poll until the old server thread exits, then start the new server."""
+        if self.server_thread and self.server_thread.is_alive():
+            if attempts_left <= 0:
+                self.log("Old server did not stop in time; starting anyway")
+            else:
+                self.after(100, lambda: self._start_when_stopped(attempts_left - 1))
+                return
         self.start_server()
 
     def create_tray_icon(self) -> Image.Image:
@@ -438,7 +510,8 @@ class AirTypeApp(ctk.CTk):
             target = ctypes.windll.user32.GetSystemMetrics(SM_CXICON)
             if target <= 0:
                 target = 32
-        except Exception:
+        except Exception as e:
+            logger.debug(f"GetSystemMetrics failed, using 32px tray icon: {e}")
             target = 32
 
         if os.path.exists(TRAY_ICON_PATH):
