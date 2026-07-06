@@ -10,6 +10,11 @@
     <string name="port_hint"></string>
     <string name="connect">Connect</string>
     <string name="disconnect">Disconnect</string>
+    <string name="token">Pairing Token</string>
+    <string name="token_hint">shown in the Windows app (optional)</string>
+    <string name="enter_ip">Enter server IP</string>
+    <string name="invalid_port">Invalid port — must be between 1 and 65535</string>
+    <string name="auth_failed">Authentication failed — check the pairing token</string>
 
     <!-- Status -->
     <string name="connected">Connected</string>

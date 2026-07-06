@@ -25,12 +25,14 @@ class MainActivity : AppCompatActivity() {
         private const val PREFS_NAME = "AirTypePrefs"
         private const val KEY_LAST_IP = "last_ip"
         private const val KEY_LAST_PORT = "last_port"
+        private const val KEY_LAST_TOKEN = "last_token"
         private const val DEFAULT_IP = "192.168.1.100"
         private const val DEFAULT_PORT = "8765"
     }
 
     private lateinit var ipInput: EditText
     private lateinit var portInput: EditText
+    private lateinit var tokenInput: EditText
     private lateinit var connectButton: Button
     private lateinit var statusText: TextView
     private lateinit var statusDot: View
@@ -84,6 +86,7 @@ class MainActivity : AppCompatActivity() {
         // Find views
         ipInput = findViewById(R.id.ipInput)
         portInput = findViewById(R.id.portInput)
+        tokenInput = findViewById(R.id.tokenInput)
         connectButton = findViewById(R.id.connectButton)
         statusText = findViewById(R.id.statusText)
         statusDot = findViewById(R.id.statusDot)
@@ -94,6 +97,7 @@ class MainActivity : AppCompatActivity() {
         // Load saved values
         ipInput.setText(loadPref(KEY_LAST_IP, DEFAULT_IP))
         portInput.setText(loadPref(KEY_LAST_PORT, DEFAULT_PORT))
+        tokenInput.setText(loadPref(KEY_LAST_TOKEN, ""))
 
         // Re-evaluate connection card visibility when focus moves between inputs
         val focusListener = View.OnFocusChangeListener { _, _ ->
@@ -135,10 +139,16 @@ class MainActivity : AppCompatActivity() {
         } else {
             val ip = ipInput.text.toString().trim()
             val portStr = portInput.text.toString().trim()
-            val port = portStr.toIntOrNull() ?: 8765
+            val token = tokenInput.text.toString().trim()
 
             if (ip.isEmpty()) {
-                Toast.makeText(this, "Enter server IP", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, getString(R.string.enter_ip), Toast.LENGTH_SHORT).show()
+                return
+            }
+
+            val port = portStr.toIntOrNull()
+            if (port == null || port !in 1..65535) {
+                Toast.makeText(this, getString(R.string.invalid_port), Toast.LENGTH_SHORT).show()
                 return
             }
 
@@ -146,7 +156,8 @@ class MainActivity : AppCompatActivity() {
             updateStatus(null) // Connecting state
             savePref(KEY_LAST_IP, ip)
             savePref(KEY_LAST_PORT, portStr)
-            webSocketClient?.connect(ip, port)
+            savePref(KEY_LAST_TOKEN, token)
+            webSocketClient?.connect(ip, port, token)
         }
     }
 
@@ -200,6 +211,10 @@ class MainActivity : AppCompatActivity() {
             onError = { error ->
                 Log.e(TAG, "WebSocket error: $error")
                 runOnUiThread {
+                    if (error == "auth_failed") {
+                        Toast.makeText(this, getString(R.string.auth_failed), Toast.LENGTH_LONG).show()
+                        return@runOnUiThread
+                    }
                     val isDisconnectError = error.contains("Broken pipe", ignoreCase = true) ||
                             error.contains("connection abort", ignoreCase = true) ||
                             error.contains("Connection reset", ignoreCase = true)
@@ -260,7 +275,8 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-        webSocketClient?.disconnect()
+        webSocketClient?.close()
+        webSocketClient = null
     }
 
     private fun loadPref(key: String, default: String): String {

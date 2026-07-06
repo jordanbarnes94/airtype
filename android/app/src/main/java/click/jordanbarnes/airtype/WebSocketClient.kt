@@ -4,6 +4,8 @@ import android.util.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import okhttp3.*
@@ -18,28 +20,38 @@ class WebSocketClient(
 ) {
     companion object {
         private const val TAG = "AirType.WebSocket"
-        private const val RECONNECT_DELAY_MS = 3_000L
+        private const val RECONNECT_BASE_DELAY_MS = 3_000L
+        private const val RECONNECT_MAX_DELAY_MS = 60_000L
+        private const val CLOSE_CODE_AUTH_FAILED = 4401
     }
 
+    @Volatile
     private var webSocket: WebSocket? = null
     private val client = OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS)
         .readTimeout(0, TimeUnit.MILLISECONDS) // No timeout for WebSocket
         .build()
 
-    private val scope = CoroutineScope(Dispatchers.IO)
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     private var reconnectJob: Job? = null
+    @Volatile
     private var isUserDisconnected = false
+    @Volatile
     private var lastServerIp = ""
+    @Volatile
     private var lastPort = 0
+    @Volatile
+    private var lastToken = ""
+    @Volatile
     private var reconnectAttempt = 0
 
-    fun connect(serverIp: String, port: Int) {
+    fun connect(serverIp: String, port: Int, token: String = "") {
         isUserDisconnected = false
         reconnectAttempt = 0
         lastServerIp = serverIp
         lastPort = port
+        lastToken = token
         reconnectJob?.cancel()
         doConnect(serverIp, port)
     }
@@ -56,6 +68,13 @@ class WebSocketClient(
                     override fun onOpen(webSocket: WebSocket, response: Response) {
                         Log.d(TAG, "WebSocket opened")
                         reconnectAttempt = 0
+                        if (lastToken.isNotEmpty()) {
+                            val auth = JSONObject().apply {
+                                put("type", "auth")
+                                put("token", lastToken)
+                            }
+                            webSocket.send(auth.toString())
+                        }
                         onConnected()
                     }
 
@@ -67,11 +86,18 @@ class WebSocketClient(
 
                     override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
                         Log.d(TAG, "WebSocket closed: code=$code, reason=$reason")
+                        if (code == CLOSE_CODE_AUTH_FAILED) {
+                            // Retrying with the same wrong token is pointless;
+                            // stop and let the user fix it.
+                            isUserDisconnected = true
+                            onError("auth_failed")
+                        }
                         handleConnectionLost()
                     }
 
                     override fun onMessage(webSocket: WebSocket, text: String) {
-                        Log.d(TAG, "WebSocket message received: $text")
+                        // Server only sends control messages (e.g. auth_ok)
+                        Log.d(TAG, "Server message received")
                     }
                 })
             } catch (e: Exception) {
@@ -94,10 +120,13 @@ class WebSocketClient(
         // Don't schedule if one is already pending
         if (reconnectJob?.isActive == true) return
         reconnectAttempt++
-        Log.d(TAG, "Scheduling reconnect attempt $reconnectAttempt in ${RECONNECT_DELAY_MS}ms")
+        // Exponential backoff: 3s, 6s, 12s, 24s, 48s, then capped at 60s
+        val shift = (reconnectAttempt - 1).coerceAtMost(5)
+        val delayMs = (RECONNECT_BASE_DELAY_MS shl shift).coerceAtMost(RECONNECT_MAX_DELAY_MS)
+        Log.d(TAG, "Scheduling reconnect attempt $reconnectAttempt in ${delayMs}ms")
         onReconnecting(reconnectAttempt)
         reconnectJob = scope.launch {
-            delay(RECONNECT_DELAY_MS)
+            delay(delayMs)
             if (!isUserDisconnected) {
                 doConnect(lastServerIp, lastPort)
             }
@@ -116,6 +145,20 @@ class WebSocketClient(
             // Already disconnected (e.g. mid-reconnect); notify UI directly
             onDisconnected()
         }
+    }
+
+    /**
+     * Releases all resources. The client cannot be reused after this;
+     * call from Activity.onDestroy().
+     */
+    fun close() {
+        isUserDisconnected = true
+        reconnectJob?.cancel()
+        reconnectJob = null
+        webSocket?.close(1000, "Client closed")
+        webSocket = null
+        scope.cancel()
+        client.dispatcher.executorService.shutdown()
     }
 
     private fun sendMessage(json: JSONObject, description: String) {
@@ -143,7 +186,8 @@ class WebSocketClient(
             put("type", "text")
             put("content", content)
         }
-        sendMessage(json, "sendText '$content'")
+        // Log the length only - typed content must not end up in logcat
+        sendMessage(json, "sendText (${content.length} chars)")
     }
 
     fun sendBackspace(count: Int) {
