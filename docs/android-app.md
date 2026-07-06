@@ -9,7 +9,7 @@ All in `android/app/src/main/java/click/jordanbarnes/airtype/`
 ### MainActivity.kt
 UI controller. Single-activity app.
 
-- **Connection card:** IP + port inputs (persisted in SharedPreferences), connect/disconnect button, status dot + text
+- **Connection card:** IP + port + pairing-token inputs (persisted in SharedPreferences, port validated to 1–65535), connect/disconnect button, status dot + text
 - **Text input area:** Uses `AppendOnlyEditText` (custom view). Has a clear button that resets local text without sending anything to the PC (`ignoreTextChanges = true` during clear)
 - **Typing flow:** `TextWatcher` fires on every keystroke → delegates to `TextSyncProcessor.onTextChanged()` → processor calls `sendText()` / `sendBackspace()` / `sendEnter()` on the `WebSocketClient`
 - **Backspace on empty:** When the EditText is already empty and the user hits backspace, the backspace is still forwarded to the PC. Two code paths handle this:
@@ -23,13 +23,16 @@ WebSocket transport layer using OkHttp.
 
 - Connects to `ws://<ip>:<port>`
 - **JSON message formats:**
+  - `{"type": "auth", "token": "ABC123"}` — sent first when a pairing token is configured; server replies `{"type": "auth_ok"}` or closes with code 4401
   - `{"type": "text", "content": "hello"}`
   - `{"type": "backspace", "count": 3}`
   - `{"type": "enter"}`
-- **Auto-reconnect:** On connection loss (unless user manually disconnected via `isUserDisconnected` flag), retries every 3 seconds via coroutine. Reports attempt number to UI
+- **Auto-reconnect:** On connection loss (unless user manually disconnected via `isUserDisconnected` flag), retries with exponential backoff — 3s doubling to a 60s cap. Reports attempt number to UI. An auth rejection (close code 4401) stops the reconnect loop
 - **Send failure detection:** If `ws.send()` returns false, treats connection as dead → triggers reconnect
 - **Error filtering:** Suppresses toasts for expected disconnect errors (Broken pipe, Connection reset, Connection abort)
-- Messages from server are logged but otherwise ignored (protocol is one-directional)
+- Messages from server are control-only (`auth_ok`) and otherwise ignored
+- **Log hygiene:** typed content never appears in logcat (only lengths/counts are logged)
+- **Lifecycle:** `close()` (called from `MainActivity.onDestroy`) cancels the coroutine scope and shuts down OkHttp's dispatcher so rotations don't leak scopes
 
 ### TextSyncProcessor.kt
 Diff engine that converts TextWatcher events into typing commands.

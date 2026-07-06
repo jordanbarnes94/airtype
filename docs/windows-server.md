@@ -11,10 +11,11 @@ Core server logic, shared between CLI and GUI frontends.
 
 **`AirTypeServer` class:**
 - Async WebSocket server via `websockets` library, listens on `0.0.0.0:<port>` (default 8765)
-- Incoming JSON messages are parsed and placed into an `asyncio.Queue`
+- Optional pairing token: when `token` is set, the first frame from a client must be `{"type": "auth", "token": "..."}` (10s timeout); the server replies `{"type": "auth_ok"}` or closes with code 4401
+- Incoming JSON messages are validated by `sanitize_message()` (must be a dict of a known type; text capped at 5000 chars, backspace count clamped to 1–500) and placed into a bounded `asyncio.Queue` (256 entries, drops with a warning when full)
 - A dedicated queue processor task pulls messages sequentially and runs them in a `ThreadPoolExecutor(max_workers=1)` — ensures keystrokes execute in order and don't overlap
 - Callbacks: `on_connect(ip)`, `on_disconnect(ip)`, `on_message(description)`, `on_error(error)` — used by both frontends
-- `stop()` sets an asyncio Event to signal shutdown
+- `stop()` sets an asyncio Event to signal shutdown; `start()`'s cleanup bounds the close wait (5s) and shuts down the executor
 
 **Message processing (`process_message`):**
 - `{"type": "text", "content": "..."}` → ASCII mode: `pyautogui.write(content, interval=interval)` types character by character. Unicode mode: `pyperclip.copy(content)` + `pyautogui.hotkey('ctrl', 'v')` pastes via clipboard
@@ -29,7 +30,8 @@ Core server logic, shared between CLI and GUI frontends.
 CLI frontend. Argparse-based.
 
 - `--mode ascii|unicode` — typing mode (default: ascii)
-- `--port N` — WebSocket port (default: 8765)
+- `--port N` — WebSocket port (default: 8765, validated to 1–65535)
+- `--token TOKEN` — require clients to authenticate with this pairing token (default: no auth)
 - `--debug` — verbose logging
 - `--silent` — minimal output
 - Prints the local IP and port for the user to enter on their phone
@@ -38,10 +40,10 @@ CLI frontend. Argparse-based.
 ### gui.py
 GUI frontend using customtkinter (dark theme) + pystray (system tray).
 
-**Main window (400x560):**
-- Connection info: shows IP address and port
+**Main window (400x620):**
+- Connection info: shows IP address, port, and pairing token
 - Status: "Waiting for connection..." / "Connected (ip)"
-- Settings: mode dropdown (ASCII / Unicode clipboard), port input, restart server button
+- Settings: mode dropdown (ASCII / Unicode clipboard), port input, token input, restart server button (port validated to 1024–65535; restart waits for the old server thread to exit before rebinding)
 - Bottom: "Minimize to Tray" and "Quit" buttons
 
 **Activity log panel:**
@@ -65,9 +67,11 @@ GUI frontend using customtkinter (dark theme) + pystray (system tray).
 
 **Config (`config.json`):**
 ```json
-{"port": 8765, "keypress_interval": 0.01, "mode": "ascii"}
+{"port": 8765, "keypress_interval": 0.01, "mode": "ascii", "token": "ABC123"}
 ```
 - `keypress_interval` — delay in seconds between individual simulated key presses (pyautogui `interval` param)
+- `token` — pairing token, generated on first GUI run; set to `""` to disable authentication
+- Settings changed in the GUI (mode, port, token) are persisted back to this file
 
 ## Dependencies
 
@@ -78,6 +82,10 @@ GUI frontend using customtkinter (dark theme) + pystray (system tray).
 - `pystray` — system tray icon
 - `pillow` — image handling for tray icon
 - `customtkinter` — modern Tk GUI
+
+## Tests
+
+`windows/test_server.py` — pytest suite covering message sanitization, clamping, and the auth handshake (pyautogui/pyperclip are mocked, so it runs headless: `pytest windows/`). Runs in CI via `.github/workflows/ci.yml`.
 - `pyinstaller` — builds standalone .exe
 
 ## Build

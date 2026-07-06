@@ -44,9 +44,14 @@ The CLI version supports flags:
 
 Then:
 - Open AirType on your phone
-- Enter your PC's IP and port (shown in the Windows app)
+- Enter your PC's IP, port, and pairing token (all shown in the Windows app)
 - Tap Connect
 - Start typing!
+
+## Security
+
+- **Pairing token**: the Windows app generates a short token on first run and rejects any phone that doesn't send it. This stops other devices on your network from typing on your PC. Clear the Token field (or set `"token": ""` in `config.json`) to disable it; the CLI uses `--token` and defaults to no auth.
+- **Traffic is not encrypted**: keystrokes travel over plain WebSocket on your local network. On your home WiFi this is fine; on shared or public WiFi, anyone sniffing the network could read what you type — **don't type passwords through AirType on networks you don't trust**.
 
 ## Building
 

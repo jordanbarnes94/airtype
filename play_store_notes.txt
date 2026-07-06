@@ -1,7 +1,9 @@
 <en-GB>
-v1.0.0:
+v1.2.0:
 
 Type on your Android phone and have the text appear on your Windows PC in real time — no cables, just Wi-Fi.
+
+New in this version: optional pairing token so only your phone can type on your PC, smarter reconnect that goes easy on your battery, and clearer errors when connection details are wrong.
 
 Works with glide typing, autocorrect, and voice input. Download the Windows client at https://jordanbarnes.uk/projects/airtype/download/
 </en-GB>

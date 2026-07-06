@@ -29,6 +29,21 @@ set "EXE=%ROOT%windows\dist\AirType-%VERSION%.exe"
 
 echo Using version: %VERSION% (tag: %TAG%)
 
+:: --- Check gh CLI is available ---
+where gh >nul 2>nul
+if errorlevel 1 (
+    echo [FAIL] GitHub CLI ^(gh^) not found on PATH. Install from https://cli.github.com/
+    exit /b 1
+)
+
+:: --- Check store notes mention this version ---
+findstr /c:"v%VERSION%" "%ROOT%play_store_notes.txt" >nul 2>nul
+if errorlevel 1 (
+    echo [WARN] play_store_notes.txt does not mention v%VERSION% - it may be stale.
+    set /p "CONT=Continue anyway? [y/N] "
+    if /i not "!CONT!"=="y" exit /b 1
+)
+
 :: --- Check working tree is clean ---
 :: A dirty tree means we'd tag an old commit and push untracked work silently.
 for /f "delims=" %%s in ('git -C "%ROOT%" status --porcelain') do (
