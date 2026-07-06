@@ -30,10 +30,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Java 21+: the flag-emoji grapheme test relies on java.text.BreakIterator
+      # treating regional-indicator pairs as one cluster, added in JDK 20
+      # (Android's ICU-backed BreakIterator has always done this)
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "17"
+          java-version: "21"
 
       - uses: gradle/actions/setup-gradle@v4
 
