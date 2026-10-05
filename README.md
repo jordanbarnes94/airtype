@@ -159,3 +159,9 @@ Signing and deploy settings live in `.env` at the repo root (copy from `.env.exa
 Architecture notes for anyone hacking on the code:
 - [`docs/android-app.md`](docs/android-app.md) — Android source file overview
 - [`docs/windows-server.md`](docs/windows-server.md) — Windows server + GUI overview
+
+## License
+
+Copyright (C) 2025 Jordan Barnes
+
+AirType is free software: you can redistribute it and/or modify it under the terms of the GNU Affero General Public License as published by the Free Software Foundation, version 3. It is distributed without any warranty. See [`LICENSE`](LICENSE) for the full text.
